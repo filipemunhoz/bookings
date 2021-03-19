@@ -3,37 +3,36 @@ package render
 import (
 	"bytes"
 	"fmt"
+	"github.com/justinas/nosurf"
+	"github.com/tsawler/bookings-app/pkg/config"
+	"github.com/tsawler/bookings-app/pkg/models"
 	"html/template"
 	"log"
 	"net/http"
 	"path/filepath"
-
-	"github.com/filipemunhoz/bookings/pkg/config"
-	"github.com/filipemunhoz/bookings/pkg/models"
 )
 
 var functions = template.FuncMap{}
 
 var app *config.AppConfig
 
-// NewTemplate ...
-func NewTemplate(a *config.AppConfig) {
+// NewTemplates sets the config for the template package
+func NewTemplates(a *config.AppConfig) {
 	app = a
-
 }
 
-// AddDefaultData ...
-func AddDefaultData(td *models.TemplateData) *models.TemplateData {
-
+// AddDefaultData adds data for all templates
+func AddDefaultData(td *models.TemplateData, r *http.Request) *models.TemplateData {
+	td.CSRFToken = nosurf.Token(r)
 	return td
 }
 
 // RenderTemplate renders a template
-func RenderTemplate(w http.ResponseWriter, tmpl string, td *models.TemplateData) {
-
+func RenderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, td *models.TemplateData) {
 	var tc map[string]*template.Template
 
 	if app.UseCache {
+		// get the template cache from the app config
 		tc = app.TemplateCache
 	} else {
 		tc, _ = CreateTemplateCache()
@@ -41,11 +40,12 @@ func RenderTemplate(w http.ResponseWriter, tmpl string, td *models.TemplateData)
 
 	t, ok := tc[tmpl]
 	if !ok {
-		log.Fatal("Could not get template from cache")
+		log.Fatal("Could not get template from template cache")
 	}
 
 	buf := new(bytes.Buffer)
-	td = AddDefaultData(td)
+
+	td = AddDefaultData(td, r)
 
 	_ = t.Execute(buf, td)
 
@@ -61,30 +61,28 @@ func CreateTemplateCache() (map[string]*template.Template, error) {
 
 	myCache := map[string]*template.Template{}
 
-	pages, err := filepath.Glob("./templates/*.page.html")
+	pages, err := filepath.Glob("./templates/*.page.tmpl")
 	if err != nil {
 		return myCache, err
 	}
 
 	for _, page := range pages {
 		name := filepath.Base(page)
-
 		ts, err := template.New(name).Funcs(functions).ParseFiles(page)
 		if err != nil {
 			return myCache, err
 		}
 
-		matches, err := filepath.Glob("./templates/*.layout.html")
+		matches, err := filepath.Glob("./templates/*.layout.tmpl")
 		if err != nil {
 			return myCache, err
 		}
 
 		if len(matches) > 0 {
-			ts, err = ts.ParseGlob("./templates/*.layout.html")
+			ts, err = ts.ParseGlob("./templates/*.layout.tmpl")
 			if err != nil {
 				return myCache, err
 			}
-
 		}
 
 		myCache[name] = ts
